@@ -97,11 +97,11 @@ def app_ui():
             amount = st.number_input("Amount", min_value=0.0)
         with col2:
             type_ = st.selectbox("Type", ["In", "Out"])
-            date = st.date_input("Date", value=datetime.today()).strftime("%Y-%m-%d")
+            date = st.date_input("Date", value=datetime.today())
             date = pd.to_datetime(date)
 
         if st.button("💾 Submit Transaction"):
-            if name and reason and amount:
+            if name and reason and amount > 0:
                 id_ = get_or_create_id(df, name)
                 add_transaction(date, id_, name, job, reason, amount, type_)
                 st.success(f"Transaction added for {name} ({type_})")
@@ -131,8 +131,14 @@ def app_ui():
     if not filtered_df.empty:
         pivot = filtered_df.pivot_table(index=["name", "job"], columns="type", values="amount", aggfunc="sum", fill_value=0).reset_index()
 
+        if 'In' not in pivot.columns:
+            pivot['In'] = 0
+        if 'Out' not in pivot.columns:
+            pivot['Out'] = 0
+
         fig = px.bar(pivot, x="name", y=["In", "Out"], barmode="group",
-                     color_discrete_map={"In": "green", "Out": "red"})
+                     color_discrete_map={"In": "green", "Out": "red"},
+                     title="In vs Out per Person")
         st.plotly_chart(fig, use_container_width=True)
         st.dataframe(pivot, use_container_width=True)
 

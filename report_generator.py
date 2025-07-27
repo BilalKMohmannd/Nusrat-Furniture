@@ -4,7 +4,7 @@ from fpdf import FPDF
 
 CSV_FILE = "transactions.csv"
 
-def generate_daily_pdf_report(output_path="daily_report.pdf"):
+def generate_daily_pdf_report(output_path="daily_report_sample.pdf"):
     df = pd.read_csv(CSV_FILE, parse_dates=["date"])
     today = pd.to_datetime(datetime.now().date())
     today_df = df[df['date'] == today]
@@ -25,8 +25,8 @@ def generate_daily_pdf_report(output_path="daily_report.pdf"):
     pdf.ln(10)
     pdf.set_font("Arial", "B", 12)
     pdf.cell(40, 10, "Name")
-    pdf.cell(40, 10, "Job")
-    pdf.cell(40, 10, "Reason")
+    pdf.cell(35, 10, "Job")
+    pdf.cell(45, 10, "Reason")
     pdf.cell(30, 10, "Amount")
     pdf.cell(20, 10, "Type")
     pdf.ln()
@@ -34,8 +34,8 @@ def generate_daily_pdf_report(output_path="daily_report.pdf"):
     pdf.set_font("Arial", size=10)
     for _, row in today_df.iterrows():
         pdf.cell(40, 10, str(row['name']))
-        pdf.cell(40, 10, str(row['job']))
-        pdf.cell(40, 10, str(row['reason']))
+        pdf.cell(35, 10, str(row['job']))
+        pdf.cell(45, 10, str(row['reason']))
         pdf.cell(30, 10, f"{row['amount']}")
         pdf.cell(20, 10, str(row['type']))
         pdf.ln()
