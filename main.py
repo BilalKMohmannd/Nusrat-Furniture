@@ -649,7 +649,7 @@ st.markdown("""
 # --- Constants ---
 CSV_FILE = "transactions.csv"
 PIN_CODE = "Nusrat1221"
-JOBS = ["Polish Wala", "Driver", "Employee", "Other"]
+JOBS = ["Polish Wala", "Driver", "Employee","Bed Workshop","Home"," Karigar","Polish Material","Hardware Material","Sofa Workshop", "Other"]
 
 
 # --- Enhanced Loading Animation ---
