@@ -1,0 +1,1498 @@
+import streamlit as st
+import pandas as pd
+import uuid
+from datetime import datetime, timedelta
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import os
+import time
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="Nusrat Furniture - Transaction Manager",
+    layout="wide",
+    initial_sidebar_state="expanded",
+    page_icon="🏢"
+)
+
+# --- Enhanced CSS (keeping all previous styling) ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+
+    * {
+        font-family: 'Poppins', sans-serif !important;
+    }
+
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* Cool gradient background with gentle shift */
+    .main {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        background-size: 400% 400%;
+        animation: gradientFlow 8s ease infinite;
+        background-attachment: fixed;
+        min-height: 100vh;
+    }
+
+    @keyframes gradientFlow {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    .stApp {
+        background: transparent;
+    }
+
+    /* Smooth container entrance */
+    .main .block-container {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(20px);
+        border-radius: 20px;
+        margin: 1rem;
+        padding: 2rem;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+        animation: slideUp 0.8s ease-out;
+    }
+
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* SIDEBAR TOGGLE BUTTON */
+    .sidebar-toggle {
+        position: fixed;
+        top: 1rem;
+        left: 1rem;
+        z-index: 9999;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        cursor: pointer;
+        box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        transition: all 0.3s ease;
+        animation: toggleFloat 2s ease-in-out infinite;
+    }
+
+    .sidebar-toggle:hover {
+        transform: scale(1.1);
+        box-shadow: 0 15px 35px rgba(102, 126, 234, 0.5);
+    }
+
+    @keyframes toggleFloat {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-3px); }
+    }
+
+    /* ENHANCED STYLISH LOGIN FORM */
+    .login-container {
+        max-width: 500px;
+        margin: 8vh auto;
+        padding: 0;
+        position: relative;
+        animation: loginEntrance 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    @keyframes loginEntrance {
+        0% {
+            opacity: 0;
+            transform: translateY(50px) scale(0.9);
+        }
+        50% {
+            opacity: 0.8;
+            transform: translateY(-10px) scale(1.02);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    .login-card {
+        background: rgba(255, 255, 255, 0.98);
+        backdrop-filter: blur(25px);
+        border-radius: 30px;
+        padding: 4rem 3rem;
+        box-shadow: 
+            0 30px 80px rgba(0, 0, 0, 0.15),
+            0 0 0 1px rgba(255, 255, 255, 0.3);
+        position: relative;
+        overflow: hidden;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+
+    .login-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, #667eea, #764ba2, #f093fb, #667eea);
+        background-size: 400% 400%;
+        border-radius: 30px;
+        z-index: -1;
+        animation: borderGlow 6s ease infinite;
+        padding: 2px;
+    }
+
+    @keyframes borderGlow {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+    }
+
+    .login-header {
+        text-align: center;
+        margin-bottom: 3rem;
+        position: relative;
+    }
+
+    .login-icon {
+        font-size: 5rem;
+        margin-bottom: 1.5rem;
+        display: inline-block;
+        animation: iconFloat 3s ease-in-out infinite;
+        filter: drop-shadow(0 10px 20px rgba(102, 126, 234, 0.3));
+    }
+
+    @keyframes iconFloat {
+        0%, 100% { 
+            transform: translateY(0px) scale(1); 
+        }
+        50% { 
+            transform: translateY(-15px) scale(1.05); 
+        }
+    }
+
+    .login-title {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        font-size: 3.2rem;
+        font-weight: 900;
+        margin-bottom: 1rem;
+        line-height: 1.1;
+        animation: titleShine 3s ease-in-out infinite;
+    }
+
+    @keyframes titleShine {
+        0%, 100% { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        50% { 
+            background: linear-gradient(135deg, #f093fb 0%, #667eea 50%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    }
+
+    .login-subtitle {
+        color: #6c757d;
+        font-size: 1.3rem;
+        font-weight: 600;
+        margin-top: 1rem;
+        animation: subtitleFade 0.8s ease-out 0.5s both;
+    }
+
+    @keyframes subtitleFade {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .login-form {
+        animation: formSlide 0.8s ease-out 0.7s both;
+    }
+
+    @keyframes formSlide {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Enhanced Input Styling */
+    .stTextInput > div > div > input {
+        background: rgba(255, 255, 255, 0.9) !important;
+        border: 3px solid rgba(102, 126, 234, 0.2) !important;
+        border-radius: 20px !important;
+        padding: 1.2rem 1.5rem !important;
+        font-size: 1.1rem !important;
+        font-weight: 500 !important;
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.05) !important;
+        backdrop-filter: blur(10px) !important;
+    }
+
+    .stTextInput > div > div > input:focus,
+    .stSelectbox > div > div > div:focus,
+    .stNumberInput > div > div > input:focus {
+        border-color: #667eea !important;
+        box-shadow: 
+            0 0 0 4px rgba(102, 126, 234, 0.15),
+            0 10px 30px rgba(102, 126, 234, 0.2) !important;
+        transform: scale(1.02) !important;
+        background: rgba(255, 255, 255, 1) !important;
+    }
+
+    .stTextInput > div > div > input::placeholder {
+        color: #9ca3af !important;
+        font-weight: 500 !important;
+    }
+
+    /* Enhanced Login Button */
+    .login-button .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 20px !important;
+        padding: 1.2rem 3rem !important;
+        font-weight: 700 !important;
+        font-size: 1.2rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 1px !important;
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+        box-shadow: 0 15px 40px rgba(102, 126, 234, 0.3) !important;
+        position: relative !important;
+        overflow: hidden !important;
+        width: 100% !important;
+    }
+
+    .login-button .stButton > button::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        transition: left 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    .login-button .stButton > button:hover::before {
+        left: 100%;
+    }
+
+    .login-button .stButton > button:hover {
+        transform: translateY(-5px) scale(1.03) !important;
+        box-shadow: 0 25px 60px rgba(102, 126, 234, 0.5) !important;
+    }
+
+    .login-button .stButton > button:active {
+        transform: translateY(-2px) scale(1.01) !important;
+    }
+
+    /* Success/Error Messages for Login */
+    .login-success {
+        background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 15px;
+        text-align: center;
+        font-weight: 600;
+        margin: 1rem 0;
+        animation: successPulse 0.6s ease-out;
+        box-shadow: 0 10px 30px rgba(39, 174, 96, 0.3);
+    }
+
+    .login-error {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 15px;
+        text-align: center;
+        font-weight: 600;
+        margin: 1rem 0;
+        animation: errorShake 0.6s ease-out;
+        box-shadow: 0 10px 30px rgba(231, 76, 60, 0.3);
+    }
+
+    @keyframes successPulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    @keyframes errorShake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-10px); }
+        75% { transform: translateX(10px); }
+    }
+
+    /* Floating Particles for Login */
+    .login-particles {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        pointer-events: none;
+        border-radius: 30px;
+    }
+
+    .particle {
+        position: absolute;
+        background: rgba(102, 126, 234, 0.1);
+        border-radius: 50%;
+        animation: particleFloat 8s infinite linear;
+    }
+
+    @keyframes particleFloat {
+        0% {
+            transform: translateY(100%) scale(0);
+            opacity: 1;
+        }
+        10% {
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(-100%) scale(1);
+            opacity: 0;
+        }
+    }
+
+    /* ENHANCED SIDEBAR STYLING */
+    .sidebar {
+        background: rgba(255, 255, 255, 0.98) !important;
+        backdrop-filter: blur(25px) !important;
+        border-right: 3px solid rgba(102, 126, 234, 0.2) !important;
+        animation: sidebarSlide 0.8s ease-out !important;
+        box-shadow: 5px 0 30px rgba(0, 0, 0, 0.1) !important;
+    }
+
+    @keyframes sidebarSlide {
+        from {
+            opacity: 0;
+            transform: translateX(-30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    /* Make sidebar more visible */
+    .sidebar .stTextInput > div > div > input,
+    .sidebar .stSelectbox > div > div > div,
+    .sidebar .stNumberInput > div > div > input {
+        border-radius: 15px !important;
+        border: 2px solid rgba(102, 126, 234, 0.3) !important;
+        transition: all 0.3s ease !important;
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(10px) !important;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08) !important;
+    }
+
+    .sidebar .stTextInput > div > div > input:focus,
+    .sidebar .stSelectbox > div > div > div:focus,
+    .sidebar .stNumberInput > div > div > input:focus {
+        border-color: #667eea !important;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.2) !important;
+        transform: scale(1.02) !important;
+    }
+
+    .sidebar .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 15px !important;
+        padding: 0.8rem 1.5rem !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3) !important;
+        width: 100% !important;
+    }
+
+    .sidebar .stButton > button:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 12px 35px rgba(102, 126, 234, 0.4) !important;
+    }
+
+    /* Regular button animations (non-login) */
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 15px !important;
+        padding: 0.8rem 2rem !important;
+        font-weight: 600 !important;
+        font-size: 1rem !important;
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+        box-shadow: 0 8px 30px rgba(102, 126, 234, 0.3) !important;
+        position: relative !important;
+        overflow: hidden !important;
+    }
+
+    .stButton > button::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+        transition: left 0.6s ease;
+    }
+
+    .stButton > button:hover::before {
+        left: 100%;
+    }
+
+    .stButton > button:hover {
+        transform: translateY(-3px) scale(1.02) !important;
+        box-shadow: 0 15px 40px rgba(102, 126, 234, 0.4) !important;
+    }
+
+    /* Rest of the animations */
+    div[data-testid="stDataFrameContainer"] > div {
+        border-radius: 20px !important;
+        overflow: hidden !important;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1) !important;
+        border: 1px solid rgba(255, 255, 255, 0.3) !important;
+        transition: all 0.3s ease !important;
+        animation: fadeIn 0.6s ease-out !important;
+    }
+
+    div[data-testid="stDataFrameContainer"]:hover > div {
+        transform: translateY(-2px);
+        box-shadow: 0 15px 40px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .stExpander {
+        border-radius: 20px !important;
+        border: 1px solid rgba(102, 126, 234, 0.2) !important;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08) !important;
+        background: rgba(255, 255, 255, 0.9) !important;
+        overflow: hidden !important;
+        transition: all 0.3s ease !important;
+        animation: slideIn 0.5s ease-out !important;
+    }
+
+    .stExpander:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12) !important;
+    }
+
+    @keyframes slideIn {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    .metric-card {
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(15px);
+        border-radius: 20px;
+        padding: 2rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        animation: cardFloat 0.6s ease-out;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
+        transition: left 0.8s ease;
+    }
+
+    .metric-card:hover::before {
+        left: 0;
+    }
+
+    .metric-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    }
+
+    @keyframes cardFloat {
+        from {
+            opacity: 0;
+            transform: translateY(30px) scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    .widget-card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(15px);
+        border-radius: 20px;
+        padding: 2rem;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        transition: all 0.4s ease;
+        animation: widgetSlide 0.8s ease-out;
+    }
+
+    .widget-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
+    }
+
+    @keyframes widgetSlide {
+        from {
+            opacity: 0;
+            transform: translateX(-30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+
+    .notification {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        min-width: 300px;
+        opacity: 0;
+        transform: translateX(100%) scale(0.8);
+        transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        animation: notificationBounce 0.6s ease-out;
+    }
+
+    .notification.show {
+        opacity: 1;
+        transform: translateX(0) scale(1);
+    }
+
+    @keyframes notificationBounce {
+        0% { 
+            transform: translateX(100%) scale(0.5); 
+            opacity: 0; 
+        }
+        50% { 
+            transform: translateX(-10px) scale(1.05); 
+            opacity: 1; 
+        }
+        100% { 
+            transform: translateX(0) scale(1); 
+            opacity: 1; 
+        }
+    }
+
+    .notification.success {
+        background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+    }
+
+    .notification.error {
+        background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    }
+
+    .notification.warning {
+        background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+    }
+
+    .icon-bounce {
+        animation: gentleBounce 2s ease-in-out infinite;
+    }
+
+    @keyframes gentleBounce {
+        0%, 100% { transform: translateY(0) scale(1); }
+        50% { transform: translateY(-5px) scale(1.05); }
+    }
+
+    .icon-rotate {
+        animation: gentleRotate 4s ease-in-out infinite;
+    }
+
+    @keyframes gentleRotate {
+        0%, 100% { transform: rotate(0deg); }
+        25% { transform: rotate(3deg); }
+        75% { transform: rotate(-3deg); }
+    }
+
+    .trend-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: all 0.3s ease;
+        animation: trendSlide 0.5s ease-out;
+    }
+
+    @keyframes trendSlide {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .trend-up {
+        background: rgba(39, 174, 96, 0.1);
+        color: #27ae60;
+    }
+
+    .trend-down {
+        background: rgba(231, 76, 60, 0.1);
+        color: #e74c3c;
+    }
+
+    .trend-neutral {
+        background: rgba(52, 152, 219, 0.1);
+        color: #3498db;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 30px;
+        height: 30px;
+        border: 3px solid rgba(102, 126, 234, 0.3);
+        border-radius: 50%;
+        border-top-color: #667eea;
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .metric-card:nth-child(1) { animation-delay: 0.1s; }
+    .metric-card:nth-child(2) { animation-delay: 0.2s; }
+    .metric-card:nth-child(3) { animation-delay: 0.3s; }
+    .metric-card:nth-child(4) { animation-delay: 0.4s; }
+
+    .widget-card:nth-child(1) { animation-delay: 0.2s; }
+    .widget-card:nth-child(2) { animation-delay: 0.4s; }
+
+    ::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 4px;
+        transition: all 0.3s ease;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+    }
+
+    .header-pulse {
+        animation: headerPulse 3s ease-in-out infinite;
+    }
+
+    @keyframes headerPulse {
+        0%, 100% { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        50% { 
+            background: linear-gradient(135deg, #764ba2 0%, #f093fb 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Constants ---
+CSV_FILE = "transactions.csv"
+PIN_CODE = "Nusrat1221"
+JOBS = ["Polish Wala", "Driver", "Employee", "Other"]
+
+# --- Initialize Session State ---
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+if "sidebar_visible" not in st.session_state:
+    st.session_state["sidebar_visible"] = True
+
+
+# --- Enhanced Notification System ---
+def show_notification(message, type="info"):
+    """Show a cool animated notification"""
+    notification_id = f"notification_{int(time.time() * 1000)}"
+
+    notification_html = f"""
+    <div id="{notification_id}" class="notification {type}">
+        <strong>{'✅' if type == 'success' else '❌' if type == 'error' else '⚠️' if type == 'warning' else 'ℹ️'}</strong>
+        {message}
+    </div>
+
+    <script>
+    setTimeout(function() {{
+        var notification = document.getElementById('{notification_id}');
+        if (notification) {{
+            notification.classList.add('show');
+        }}
+    }}, 100);
+
+    setTimeout(function() {{
+        var notification = document.getElementById('{notification_id}');
+        if (notification) {{
+            notification.style.opacity = '0';
+            notification.style.transform = 'translateX(100%) scale(0.8)';
+            setTimeout(function() {{
+                notification.remove();
+            }}, 500);
+        }}
+    }}, 3000);
+    </script>
+    """
+
+    st.markdown(notification_html, unsafe_allow_html=True)
+
+
+# --- Sidebar Toggle Function ---
+def create_sidebar_toggle():
+    """Create a floating toggle button for sidebar"""
+    toggle_html = f"""
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
+        {'📱' if st.session_state.get('sidebar_visible', True) else '📋'}
+    </button>
+
+    <script>
+    function toggleSidebar() {{
+        // This will be handled by Streamlit rerun
+        console.log('Sidebar toggle clicked');
+    }}
+    </script>
+    """
+
+    st.markdown(toggle_html, unsafe_allow_html=True)
+
+
+# --- Loading Animation ---
+def show_loading(message="Loading"):
+    loading_html = f"""
+    <div style="display: flex; justify-content: center; align-items: center; height: 80px; flex-direction: column;">
+        <div class="loading-spinner"></div>
+        <span style="margin-top: 1rem; color: #667eea; font-weight: 600;">{message}...</span>
+    </div>
+    """
+    return st.markdown(loading_html, unsafe_allow_html=True)
+
+
+# --- Create Login Particles ---
+def create_login_particles():
+    particles_js = """
+    <script>
+    function createLoginParticle() {
+        const container = document.querySelector('.login-particles');
+        if (!container) return;
+
+        const particle = document.createElement('div');
+        particle.classList.add('particle');
+        particle.style.left = Math.random() * 100 + '%';
+        particle.style.width = particle.style.height = Math.random() * 8 + 4 + 'px';
+        particle.style.animationDuration = Math.random() * 4 + 6 + 's';
+        particle.style.animationDelay = Math.random() * 2 + 's';
+        container.appendChild(particle);
+
+        setTimeout(() => {
+            if (particle.parentNode) {
+                particle.remove();
+            }
+        }, 10000);
+    }
+
+    // Create particles for login
+    const loginInterval = setInterval(() => {
+        if (document.querySelector('.login-particles')) {
+            createLoginParticle();
+        } else {
+            clearInterval(loginInterval);
+        }
+    }, 500);
+    </script>
+    """
+    return particles_js
+
+
+# --- Load Data with Caching ---
+@st.cache_data
+def load_data():
+    if not os.path.exists(CSV_FILE):
+        df = pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
+        df.to_csv(CSV_FILE, index=False)
+        return df
+    df = pd.read_csv(CSV_FILE)
+    df['date'] = pd.to_datetime(df['date'])
+    return df
+
+
+# --- Save Data ---
+def save_data(df):
+    df.to_csv(CSV_FILE, index=False)
+    st.cache_data.clear()
+
+
+# --- Generate or Get Existing ID ---
+def get_or_create_id(df, name):
+    person = df[df['name'].str.lower() == name.lower()]
+    if not person.empty:
+        return person.iloc[0]['id']
+    return str(uuid.uuid4())[:8]
+
+
+# --- Add Transaction ---
+def add_transaction(date, id_, name, job, reason, amount, type_):
+    df = load_data()
+    new_data = pd.DataFrame([{
+        "date": date,
+        "id": id_,
+        "name": name,
+        "job": job,
+        "reason": reason,
+        "amount": amount,
+        "type": type_
+    }])
+    df = pd.concat([df, new_data], ignore_index=True)
+    save_data(df)
+    return True
+
+
+# --- Filter Data ---
+def filter_data(df, name=None, id_=None, job=None, date_range=None):
+    filtered_df = df.copy()
+
+    if name:
+        filtered_df = filtered_df[filtered_df['name'].str.contains(name, case=False, na=False)]
+    if id_:
+        filtered_df = filtered_df[filtered_df['id'].str.contains(id_, case=False, na=False)]
+    if job and job != "All":
+        filtered_df = filtered_df[filtered_df['job'] == job]
+    if date_range:
+        start_date, end_date = date_range
+        filtered_df = filtered_df[
+            (filtered_df['date'].dt.date >= start_date) &
+            (filtered_df['date'].dt.date <= end_date)
+            ]
+
+    return filtered_df
+
+
+# --- Calculate Analytics ---
+def calculate_analytics(df):
+    if df.empty:
+        return {}
+
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=1)
+    last_week = today - timedelta(days=7)
+    last_month = today - timedelta(days=30)
+
+    # Today's transactions
+    today_df = df[df['date'].dt.date == today]
+    yesterday_df = df[df['date'].dt.date == yesterday]
+
+    # Weekly comparison
+    this_week_df = df[df['date'].dt.date >= last_week]
+    last_week_df = df[(df['date'].dt.date >= (last_week - timedelta(days=7))) &
+                      (df['date'].dt.date < last_week)]
+
+    analytics = {
+        'today_total': len(today_df),
+        'today_amount': today_df['amount'].sum() if not today_df.empty else 0,
+        'yesterday_total': len(yesterday_df),
+        'yesterday_amount': yesterday_df['amount'].sum() if not yesterday_df.empty else 0,
+        'week_total': len(this_week_df),
+        'week_amount': this_week_df['amount'].sum() if not this_week_df.empty else 0,
+        'last_week_total': len(last_week_df),
+        'last_week_amount': last_week_df['amount'].sum() if not last_week_df.empty else 0,
+        'total_in': df[df['type'] == 'In']['amount'].sum(),
+        'total_out': df[df['type'] == 'Out']['amount'].sum(),
+    }
+
+    return analytics
+
+
+# --- Get Trend Indicator ---
+def get_trend_indicator(current, previous, is_amount=False):
+    if previous == 0:
+        if current > 0:
+            return "↗️ New", "trend-up"
+        else:
+            return "➖ No Change", "trend-neutral"
+
+    change_percent = ((current - previous) / previous) * 100
+
+    if change_percent > 0:
+        return f"↗️ +{change_percent:.1f}%", "trend-up"
+    elif change_percent < 0:
+        return f"↘️ {change_percent:.1f}%", "trend-down"
+    else:
+        return "➖ No change", "trend-neutral"
+
+
+# --- ENHANCED STYLISH LOGIN UI ---
+def login_ui():
+    # Create particles
+    st.markdown(create_login_particles(), unsafe_allow_html=True)
+
+    st.markdown("""
+    <div class="login-container">
+        <div class="login-card">
+            <div class="login-particles"></div>
+            <div class="login-header">
+                <div class="login-icon">🏢</div>
+                <h1 class="login-title">Nusrat Furniture</h1>
+                <p class="login-subtitle">✨ Premium Transaction Management System</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Create form in a separate container for better styling
+    st.markdown('<div class="login-form">', unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        pin = st.text_input("", type="password", placeholder="🔐 Enter your secure PIN", key="login_pin_input")
+
+        st.markdown('<div class="login-button">', unsafe_allow_html=True)
+        if st.button("🚀 Access Dashboard", use_container_width=True, key="stylish_login_btn"):
+            if pin == PIN_CODE:
+                # Show loading
+                loading_placeholder = st.empty()
+                with loading_placeholder:
+                    show_loading("Authenticating")
+                time.sleep(1.5)
+                loading_placeholder.empty()
+
+                # Success animation
+                st.markdown('<div class="login-success">✅ Authentication Successful! Welcome Back!</div>',
+                            unsafe_allow_html=True)
+                st.session_state["authenticated"] = True
+                show_notification("🎉 Login successful! Welcome to your dashboard!", "success")
+                time.sleep(2)
+                st.rerun()
+            else:
+                st.markdown('<div class="login-error">❌ Invalid PIN! Please check your credentials.</div>',
+                            unsafe_allow_html=True)
+                show_notification("🔒 Invalid PIN! Please try again.", "error")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Additional login info
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.9); border-radius: 20px; backdrop-filter: blur(10px);">
+            <p style="color: #6c757d; margin: 0; font-weight: 500;">
+                🔒 Secure Access Required<br>
+                <small>Enter your authorized PIN to continue</small>
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+# --- Main App UI with PROPER SIDEBAR SEARCH ---
+def app_ui():
+    # Create sidebar toggle button
+    create_sidebar_toggle()
+
+    # Animated Header
+    st.markdown("""
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <h1 class="header-pulse" style="font-size: 3rem; font-weight: 800; margin-bottom: 1rem;">
+            <span class="icon-rotate">📊</span> Nusrat Furniture Dashboard
+        </h1>
+        <p style="color: #6c757d; font-size: 1.2rem; font-weight: 500;">
+            <span class="icon-bounce">⚡</span> Real-time Transaction Management & Analytics
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    df = load_data()
+    analytics = calculate_analytics(df)
+
+    # Initialize filtered_df
+    filtered_df = df.copy()
+
+    # --- SIDEBAR WITH SEARCH FUNCTIONALITY ---
+    with st.sidebar:
+        st.markdown("""
+        <div style="text-align: center; padding: 1.5rem; margin-bottom: 2rem; background: rgba(102, 126, 234, 0.1); border-radius: 20px;">
+            <div style="font-size: 2.5rem;" class="icon-rotate">🔍</div>
+            <h2 style="color: #2c3e50; font-weight: 800; margin: 1rem 0;">Search & Filter</h2>
+            <p style="color: #6c757d; margin: 0; font-size: 0.9rem;">Find transactions quickly</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # SEARCH CONTROLS
+        search_name = st.text_input(
+            "👤 Search by Name",
+            placeholder="Enter person's name...",
+            key="search_name_sidebar",
+            help="Search for transactions by person's name"
+        )
+
+        search_id = st.text_input(
+            "🆔 Search by ID",
+            placeholder="Enter ID...",
+            key="search_id_sidebar",
+            help="Search for transactions by unique ID"
+        )
+
+        search_job = st.selectbox(
+            "💼 Filter by Job",
+            ["All"] + JOBS,
+            key="search_job_sidebar",
+            help="Filter transactions by job role"
+        )
+
+        # DATE RANGE FILTER
+        st.markdown("📅 **Date Range Filter**")
+        col1, col2 = st.columns(2)
+        with col1:
+            start_date = st.date_input(
+                "From",
+                value=datetime.today().replace(day=1),
+                key="start_date_sidebar",
+                help="Start date for filtering"
+            )
+        with col2:
+            end_date = st.date_input(
+                "To",
+                value=datetime.today(),
+                key="end_date_sidebar",
+                help="End date for filtering"
+            )
+
+        # APPLY FILTERS
+        date_range = (start_date, end_date) if start_date and end_date else None
+
+        # Apply all filters to the dataframe
+        filtered_df = filter_data(
+            df,
+            search_name if search_name else None,
+            search_id if search_id else None,
+            search_job if search_job != "All" else None,
+            date_range
+        )
+
+        # SIDEBAR STATISTICS
+        st.markdown("---")
+        st.markdown("""
+        <div style="background: rgba(102, 126, 234, 0.1); padding: 1rem; border-radius: 15px; margin: 1rem 0;">
+            <h3 style="color: #2c3e50; font-weight: 700; margin-bottom: 1rem; text-align: center;">
+                📈 Filtered Results
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not filtered_df.empty:
+            # Show filtered statistics
+            total_filtered = len(filtered_df)
+            total_original = len(df)
+
+            st.metric(
+                "📝 Filtered Records",
+                total_filtered,
+                delta=f"{total_filtered - total_original} from total" if total_filtered != total_original else "All records shown"
+            )
+            st.metric("👥 Unique People", filtered_df['name'].nunique())
+            st.metric("💰 Total Amount", f"Rs. {filtered_df['amount'].sum():,.0f}")
+            st.metric("📊 Avg Transaction", f"Rs. {filtered_df['amount'].mean():,.0f}")
+
+            # Show filter summary
+            active_filters = []
+            if search_name:
+                active_filters.append(f"Name: {search_name}")
+            if search_id:
+                active_filters.append(f"ID: {search_id}")
+            if search_job != "All":
+                active_filters.append(f"Job: {search_job}")
+            if date_range:
+                active_filters.append(f"Date: {start_date} to {end_date}")
+
+            if active_filters:
+                st.info("🔍 **Active Filters:**\n" + "\n".join([f"• {f}" for f in active_filters]))
+
+            # Additional insights
+            if not filtered_df.empty:
+                most_active = filtered_df['name'].value_counts().index[0]
+                st.success(f"🏆 Most Active: **{most_active}**")
+        else:
+            st.warning("⚠️ No transactions match your current filters")
+            st.info("💡 Try adjusting your search criteria")
+
+        # QUICK ACTIONS
+        st.markdown("---")
+        st.markdown("""
+        <div style="background: rgba(39, 174, 96, 0.1); padding: 1rem; border-radius: 15px; margin: 1rem 0;">
+            <h3 style="color: #2c3e50; font-weight: 700; margin-bottom: 1rem; text-align: center;">
+                ⚡ Quick Actions
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Clear filters button
+        if st.button("🧹 Clear All Filters", use_container_width=True, key="clear_filters"):
+            # Clear all session state keys related to search
+            for key in list(st.session_state.keys()):
+                if 'search' in key or 'date' in key:
+                    del st.session_state[key]
+            show_notification("🧹 All filters cleared!", "info")
+            st.rerun()
+
+        if st.button("🔄 Refresh Data", use_container_width=True, key="sidebar_refresh"):
+            with st.spinner("Refreshing data..."):
+                time.sleep(0.8)
+                st.cache_data.clear()
+            show_notification("✅ Data refreshed successfully!", "success")
+            st.rerun()
+
+        if st.button("📥 Export Filtered", use_container_width=True, key="sidebar_export"):
+            if not filtered_df.empty:
+                csv = filtered_df.to_csv(index=False)
+                st.download_button(
+                    label="⬇️ Download CSV",
+                    data=csv,
+                    file_name=f"filtered_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="sidebar_download"
+                )
+                show_notification("📊 Data exported successfully!", "success")
+            else:
+                show_notification("⚠️ No data to export with current filters!", "warning")
+
+        if st.button("🚪 Logout", use_container_width=True, key="sidebar_logout"):
+            with st.spinner("Logging out..."):
+                time.sleep(0.5)
+            st.session_state["authenticated"] = False
+            show_notification("👋 Logged out successfully!", "info")
+            st.rerun()
+
+        # Sidebar footer
+        st.markdown("---")
+        st.markdown("""
+        <div style="text-align: center; padding: 1rem; background: rgba(102, 126, 234, 0.05); border-radius: 10px;">
+            <small style="color: #6c757d;">
+                <strong>Nusrat Furniture</strong><br>
+                Transaction Manager v3.0<br>
+                <em>Sidebar Search Active</em>
+            </small>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- REST OF THE DASHBOARD (using filtered_df) ---
+    # Animated Metrics Row
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        trend_text, trend_class = get_trend_indicator(analytics.get('today_total', 0),
+                                                      analytics.get('yesterday_total', 0))
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; font-size: 1rem; color: #6c757d; font-weight: 500;">Today's Transactions</h3>
+                    <h2 style="margin: 0.5rem 0; font-size: 2.5rem; font-weight: 800; color: #2c3e50;">{analytics.get('today_total', 0)}</h2>
+                    <div class="trend-indicator {trend_class}">{trend_text}</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.6;" class="icon-bounce">📝</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        trend_text, trend_class = get_trend_indicator(analytics.get('today_amount', 0),
+                                                      analytics.get('yesterday_amount', 0), True)
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; font-size: 1rem; color: #6c757d; font-weight: 500;">Today's Amount</h3>
+                    <h2 style="margin: 0.5rem 0; font-size: 2.5rem; font-weight: 800; color: #2c3e50;">Rs. {analytics.get('today_amount', 0):,.0f}</h2>
+                    <div class="trend-indicator {trend_class}">{trend_text}</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.6;" class="icon-bounce">💰</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        week_trend_text, week_trend_class = get_trend_indicator(analytics.get('week_total', 0),
+                                                                analytics.get('last_week_total', 0))
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; font-size: 1rem; color: #6c757d; font-weight: 500;">This Week</h3>
+                    <h2 style="margin: 0.5rem 0; font-size: 2.5rem; font-weight: 800; color: #2c3e50;">{analytics.get('week_total', 0)}</h2>
+                    <div class="trend-indicator {week_trend_class}">📅 {analytics.get('week_total', 0)} transactions</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.6;" class="icon-bounce">📊</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col4:
+        balance = analytics.get('total_in', 0) - analytics.get('total_out', 0)
+        balance_color = "#27ae60" if balance >= 0 else "#e74c3c"
+        balance_icon = "💚" if balance >= 0 else "❤️"
+        st.markdown(f"""
+        <div class="metric-card">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0; font-size: 1rem; color: #6c757d; font-weight: 500;">Net Balance</h3>
+                    <h2 style="margin: 0.5rem 0; font-size: 2.5rem; font-weight: 800; color: {balance_color};">Rs. {balance:,.0f}</h2>
+                    <div class="trend-indicator trend-neutral">💼 Total portfolio</div>
+                </div>
+                <div style="font-size: 2.5rem; opacity: 0.6;" class="icon-bounce">{balance_icon}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Rest of the dashboard widgets using filtered_df...
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("""
+        <div class="widget-card">
+            <h3 style="color: #2c3e50; font-weight: 700; margin-bottom: 1rem;">
+                <span class="icon-bounce">📋</span> Recent Transactions
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not filtered_df.empty:
+            recent_df = filtered_df.head(5).copy()
+            recent_df['date'] = recent_df['date'].dt.strftime('%Y-%m-%d')
+            recent_df['amount'] = recent_df['amount'].apply(lambda x: f"Rs. {x:,.0f}")
+            st.dataframe(recent_df[['date', 'name', 'amount', 'type']], use_container_width=True, hide_index=True)
+        else:
+            st.info("No recent transactions found with current filters")
+
+    with col2:
+        st.markdown("""
+        <div class="widget-card">
+            <h3 style="color: #2c3e50; font-weight: 700; margin-bottom: 1rem;">
+                <span class="icon-bounce">🏆</span> Top Performers
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not filtered_df.empty:
+            top_performers = filtered_df.groupby('name')['amount'].agg(['count', 'sum']).reset_index()
+            top_performers.columns = ['Name', 'Transactions', 'Total Amount']
+            top_performers = top_performers.sort_values('Total Amount', ascending=False).head(5)
+            top_performers['Total Amount'] = top_performers['Total Amount'].apply(lambda x: f"Rs. {x:,.0f}")
+            st.dataframe(top_performers, use_container_width=True, hide_index=True)
+        else:
+            st.info("No data available with current filters")
+
+    # Charts using filtered data
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if not filtered_df.empty:
+            type_summary = filtered_df.groupby('type')['amount'].sum().reset_index()
+            fig_pie = px.pie(
+                type_summary,
+                values='amount',
+                names='type',
+                title="💰 Transaction Distribution (Filtered)",
+                color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
+                hole=0.4
+            )
+            fig_pie.update_layout(
+                font=dict(family="Poppins, sans-serif", size=12),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                showlegend=True
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+    with col2:
+        if not filtered_df.empty and len(filtered_df) > 1:
+            job_summary = filtered_df.groupby('job')['amount'].sum().reset_index()
+            fig_bar = px.bar(
+                job_summary,
+                x='job',
+                y='amount',
+                title="👥 Amount by Job Role (Filtered)",
+                color='amount',
+                color_continuous_scale='Viridis'
+            )
+            fig_bar.update_layout(
+                font=dict(family="Poppins, sans-serif", size=12),
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Job Role",
+                yaxis_title="Amount (Rs.)"
+            )
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+    # Time series chart
+    if not filtered_df.empty and len(filtered_df) > 5:
+        st.markdown("### 📈 Transaction Trends (Filtered Data)")
+        daily_summary = filtered_df.groupby([filtered_df['date'].dt.date, 'type'])['amount'].sum().reset_index()
+
+        fig_time = px.line(
+            daily_summary,
+            x='date',
+            y='amount',
+            color='type',
+            title="📊 Daily Transaction Trends",
+            color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
+            markers=True
+        )
+        fig_time.update_layout(
+            font=dict(family="Poppins, sans-serif", size=12),
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            xaxis_title="Date",
+            yaxis_title="Amount (Rs.)",
+            hovermode='x unified'
+        )
+        st.plotly_chart(fig_time, use_container_width=True)
+
+    # --- Enhanced Transaction Form ---
+    with st.expander("➕ Add New Transaction", expanded=False):
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 2rem;">
+            <h3 style="color: #2c3e50; font-weight: 700;">
+                <span class="icon-bounce">📝</span> New Transaction
+            </h3>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            name = st.text_input("👤 Person's Name*", placeholder="Enter full name", key="form_name")
+            job = st.selectbox("💼 Job Role*", JOBS, key="form_job")
+
+        with col2:
+            reason = st.text_input("📄 Reason*", placeholder="Purpose of transaction", key="form_reason")
+            amount = st.number_input("💰 Amount*", min_value=0.0, step=100.0, key="form_amount")
+
+        with col3:
+            type_ = st.selectbox("🔄 Transaction Type*", ["In", "Out"], key="form_type")
+            date = st.date_input("📅 Date", value=datetime.today(), key="form_date")
+
+        col1, col2, col3 = st.columns([2, 1, 2])
+        with col2:
+            if st.button("💾 Submit Transaction", use_container_width=True, key="submit_transaction"):
+                if name and reason and amount > 0:
+                    loading_placeholder = st.empty()
+                    with loading_placeholder:
+                        show_loading("Processing")
+                    time.sleep(1)
+                    loading_placeholder.empty()
+
+                    id_ = get_or_create_id(df, name)
+                    add_transaction(pd.to_datetime(date), id_, name, job, reason, amount, type_)
+                    show_notification(f"✅ Transaction added for {name} (Rs. {amount:,.2f})", "success")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    show_notification("⚠️ Please fill all required fields", "error")
+
+    # --- Transactions Table (using filtered data) ---
+    st.markdown("### 📋 All Transactions (Filtered)")
+
+    if filtered_df.empty:
+        st.info(
+            "🔍 No transactions found with current filters. Try adjusting your search criteria in the sidebar or add a new transaction.")
+    else:
+        # Show count of filtered vs total
+        st.info(f"📊 Showing {len(filtered_df)} of {len(df)} total transactions")
+
+        display_df = filtered_df.copy()
+        display_df['date'] = display_df['date'].dt.strftime('%Y-%m-%d')
+        display_df['amount'] = display_df['amount'].apply(lambda x: f"Rs. {x:,.2f}")
+        display_df = display_df[['date', 'name', 'job', 'reason', 'amount', 'type', 'id']]
+
+        # Style dataframe
+        def style_dataframe(df):
+            def color_type(val):
+                if val == 'In':
+                    return 'background: #d4edda; color: #155724; font-weight: 600;'
+                elif val == 'Out':
+                    return 'background: #f8d7da; color: #721c24; font-weight: 600;'
+                return ''
+
+            styled = df.style.applymap(color_type, subset=['type'])
+            return styled
+
+        st.dataframe(style_dataframe(display_df), use_container_width=True, hide_index=True)
+
+    # Animated Footer
+    st.markdown("---")
+    st.markdown("""
+    <div class="metric-card" style="text-align: center; padding: 2rem; margin: 2rem 0;">
+    <div style="font-size: 2.5rem; margin-bottom: 1rem;" class="icon-rotate">🏢</div>
+    <h3 style="color: #2c3e50; margin: 0.5rem 0; font-weight: 700;">Nusrat Furniture Transaction Manager</h3>
+    <p style="color: #6c757d; margin: 0; font-weight: 500;">Professional transaction management with working sidebar search</p>
+    </div> """, unsafe_allow_html=True)
+
+def main():
+    if not st.session_state["authenticated"]:
+        login_ui()
+    else:
+        app_ui()
+
+main()
