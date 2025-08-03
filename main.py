@@ -657,7 +657,7 @@ st.markdown("""
 
 # --- Constants ---
 PIN_CODE = "Nusrat1221"
-JOBS = ["Polish Wala", "Driver", "Employee", "Other"]
+JOBS = ["Polish Wala", "Driver", "Employee", "Other","Wood Factory","Wood Material","Hardware Material","Sheesha","Ghar Kharacha","Polish Material","Kushion wala","Sofa Factory","Kapra"]
 TABLE_NAME = "transactions"
 
 # --- Supabase Setup ---
