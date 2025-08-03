@@ -7,6 +7,15 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
 import time
+from supabase import create_client
+import base64
+import tempfile
+import shutil
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -647,10 +656,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Constants ---
-CSV_FILE = "transactions.csv"
 PIN_CODE = "Nusrat1221"
-JOBS = ["Polish Wala", "Driver", "Employee","Bed Workshop","Home"," Karigar","Polish Material","Hardware Material","Sofa Workshop", "Other"]
+JOBS = ["Polish Wala", "Driver", "Employee", "Other"]
+TABLE_NAME = "transactions"
 
+# --- Supabase Setup ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# --- Initialize Supabase Client ---
+@st.cache_resource
+def init_supabase():
+    try:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            st.error("Supabase credentials not found. Please configure secrets.toml.")
+            return None
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        st.error(f"Error connecting to Supabase: {e}")
+        return None
 
 # --- Enhanced Loading Animation ---
 def show_loading():
@@ -662,24 +686,52 @@ def show_loading():
     """
     return st.markdown(loading_html, unsafe_allow_html=True)
 
-
-# --- Load Data with Caching ---
-@st.cache_data
+# --- Load Data with Robust Date Handling ---
 def load_data():
-    if not os.path.exists(CSV_FILE):
-        df = pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
-        df.to_csv(CSV_FILE, index=False)
+    try:
+        supabase = init_supabase()
+        if not supabase:
+            st.error("Failed to initialize Supabase client.")
+            return pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
+
+        # Fetch data from Supabase
+        response = supabase.table(TABLE_NAME).select("*").execute()
+        df = pd.DataFrame(response.data)
+
+        if df.empty:
+            st.warning("No data returned from Supabase.")
+            return pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
+
+        # Convert 'date' column to datetime
+        df['date'] = pd.to_datetime(df['date'], errors='coerce', utc=True)
+        if df['date'].isna().any():
+            st.warning("Some dates could not be parsed. Check the 'date' column format in Supabase.")
+            df = df.dropna(subset=['date'])
+
+        # Convert to local timezone (PKT)
+        df['date'] = df['date'].dt.tz_convert('Asia/Karachi')
         return df
-    df = pd.read_csv(CSV_FILE)
-    df['date'] = pd.to_datetime(df['date'])
-    return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        return pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
 
-
-# --- Save Data ---
-def save_data(df):
-    df.to_csv(CSV_FILE, index=False)
-    st.cache_data.clear()
-
+# --- Save Data to Supabase ---
+def save_data_to_supabase(data, operation="insert", index=None):
+    try:
+        supabase = init_supabase()
+        if not supabase:
+            return False
+        # Ensure date is in ISO 8601 format with UTC timezone
+        data['date'] = pd.Timestamp(data['date']).tz_convert('UTC').isoformat()
+        if operation == "insert":
+            response = supabase.table(TABLE_NAME).insert(data).execute()
+        elif operation == "update" and index is not None:
+            response = supabase.table(TABLE_NAME).update(data).eq("id", data["id"]).execute()
+        st.cache_data.clear()  # Clear cache to refresh data
+        return True
+    except Exception as e:
+        st.error(f"Error saving to Supabase: {e}")
+        return False
 
 # --- Generate or Get Existing ID ---
 def get_or_create_id(df, name):
@@ -688,50 +740,56 @@ def get_or_create_id(df, name):
         return person.iloc[0]['id']
     return str(uuid.uuid4())[:8]
 
-
 # --- Add Transaction with Animation ---
 def add_transaction(date, id_, name, job, reason, amount, type_):
-    df = load_data()
-    new_data = pd.DataFrame([{
+    data = {
         "date": date,
         "id": id_,
         "name": name,
         "job": job,
         "reason": reason,
-        "amount": amount,
+        "amount": float(amount),
         "type": type_
-    }])
-    df = pd.concat([df, new_data], ignore_index=True)
-    save_data(df)
-    return True
-
+    }
+    return save_data_to_supabase(data, operation="insert")
 
 # --- Edit Transaction ---
 def edit_transaction(index, date, name, job, reason, amount, type_):
     df = load_data()
     id_ = df.loc[index, 'id']  # Retain original ID
-    df.loc[index] = [pd.to_datetime(date), id_, name, job, reason, amount, type_]
-    save_data(df)
-    return True
-
+    data = {
+        "date": date,
+        "id": id_,
+        "name": name,
+        "job": job,
+        "reason": reason,
+        "amount": float(amount),
+        "type": type_
+    }
+    return save_data_to_supabase(data, operation="update", index=index)
 
 # --- Filter Data ---
 def filter_data(df, name=None, id_=None, job=None, date_range=None):
     filtered_df = df.copy()
+
+    # Apply filters only if provided
     if name:
         filtered_df = filtered_df[filtered_df['name'].str.contains(name, case=False, na=False)]
     if id_:
         filtered_df = filtered_df[filtered_df['id'].str.contains(id_, case=False, na=False)]
     if job and job != "All":
         filtered_df = filtered_df[filtered_df['job'] == job]
+
     if date_range:
         start_date, end_date = date_range
+        start_date = pd.Timestamp(start_date, tz='Asia/Karachi')
+        end_date = pd.Timestamp(end_date, tz='Asia/Karachi') + timedelta(days=1) - timedelta(seconds=1)
         filtered_df = filtered_df[
-            (filtered_df['date'].dt.date >= start_date) &
-            (filtered_df['date'].dt.date <= end_date)
+            (filtered_df['date'] >= start_date) &
+            (filtered_df['date'] <= end_date)
             ]
-    return filtered_df
 
+    return filtered_df
 
 # --- Create Enhanced Metric Cards ---
 def create_metric_card(title, value, card_type="neutral"):
@@ -749,6 +807,154 @@ def create_metric_card(title, value, card_type="neutral"):
     """
     st.markdown(html, unsafe_allow_html=True)
 
+# --- Generate PDF Report ---
+def generate_pdf_report(filtered_df, start_date, end_date):
+    st.write("Starting PDF report generation...")
+    try:
+        # Create temporary directory
+        temp_dir = tempfile.mkdtemp()
+        st.write(f"Temporary directory created: {temp_dir}")
+
+        # Prepare data for the report
+        st.write("Preparing data for report...")
+        total_in = filtered_df[filtered_df['type'] == 'In']['amount'].sum()
+        total_out = filtered_df[filtered_df['type'] == 'Out']['amount'].sum()
+        net_balance = total_in - total_out
+        st.write(f"Total In: {total_in}, Total Out: {total_out}, Net Balance: {net_balance}")
+
+        # Format table data
+        report_df = filtered_df.copy()
+        report_df['date'] = report_df['date'].dt.strftime('%Y-%m-%d')
+        report_df['amount'] = report_df['amount'].apply(lambda x: f"Rs. {int(x)}")
+        report_df = report_df[['date', 'name', 'job', 'reason', 'amount', 'type', 'id']]
+        st.write("Table data formatted.")
+
+        # Create PDF
+        pdf_path = os.path.join(temp_dir, "transaction_report.pdf")
+        st.write(f"Creating PDF at: {pdf_path}")
+        doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=inch, leftMargin=inch, topMargin=inch, bottomMargin=inch)
+        elements = []
+
+        # Define styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Title'],
+            fontSize=24,
+            leading=28,
+            textColor=colors.HexColor('#2c3e50'),
+            alignment=1,  # Center
+            spaceAfter=12
+        )
+        subtitle_style = ParagraphStyle(
+            'SubtitleStyle',
+            parent=styles['Normal'],
+            fontSize=14,
+            leading=16,
+            textColor=colors.HexColor('#667eea'),
+            alignment=1,  # Center
+            spaceAfter=8
+        )
+        heading_style = ParagraphStyle(
+            'HeadingStyle',
+            parent=styles['Heading2'],
+            fontSize=16,
+            leading=20,
+            textColor=colors.HexColor('#2c3e50'),
+            spaceBefore=12,
+            spaceAfter=8
+        )
+
+        # Title page
+        elements.append(Paragraph("Nusrat Furniture Transaction Report", title_style))
+        elements.append(Spacer(1, 0.5 * inch))
+        elements.append(Paragraph(f"Date Range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}", subtitle_style))
+        elements.append(Paragraph(f"Generated on {datetime.now().strftime('%Y-%m-%d')}", subtitle_style))
+        elements.append(Paragraph("Enterprise Transaction Management System", subtitle_style))
+        elements.append(Spacer(1, 1 * inch))
+
+        # Transaction Summary
+        elements.append(Paragraph("Transaction Summary", heading_style))
+        summary_data = [
+            ["Total Incoming:", f"Rs. {int(total_in)}", ""],
+            ["Total Outgoing:", f"Rs. {int(total_out)}", ""],
+            ["Net Balance:", f"Rs. {int(abs(net_balance))}", "Positive" if net_balance >= 0 else "Negative"]
+        ]
+        summary_table = Table(summary_data, colWidths=[2 * inch, 2 * inch, 2 * inch])
+        summary_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 12),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (1, 0), (1, 0), colors.HexColor('#27ae60')),  # Green for incoming
+            ('TEXTCOLOR', (1, 1), (1, 1), colors.HexColor('#e74c3c')),  # Red for outgoing
+            ('TEXTCOLOR', (1, 2), (1, 2), colors.HexColor('#27ae60' if net_balance >= 0 else '#e74c3c')),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 0.5 * inch))
+
+        # Transaction Details
+        elements.append(Paragraph("Transaction Details", heading_style))
+        table_data = [["Date", "Name", "Job", "Reason", "Amount", "Type", "ID"]]
+        for _, row in report_df.iterrows():
+            table_data.append([
+                row['date'],
+                row['name'],
+                row['job'],
+                row['reason'],
+                row['amount'],
+                row['type'],
+                row['id']
+            ])
+        transaction_table = Table(table_data, colWidths=[1 * inch, 1.5 * inch, 1 * inch, 2 * inch, 1 * inch, 0.8 * inch, 1 * inch])
+        transaction_table.setStyle(TableStyle([
+            ('FONT', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONT', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2c3e50')),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f0f0f0')),
+            ('TEXTCOLOR', (5, 1), (5, -1), lambda x: colors.HexColor('#27ae60') if x == 'In' else colors.HexColor('#e74c3c'))
+        ]))
+        elements.append(transaction_table)
+        elements.append(Spacer(1, 0.5 * inch))
+
+        # Build PDF
+        st.write("Building PDF...")
+        doc.build(elements)
+        st.write(f"PDF created at: {pdf_path}")
+
+        # Read the generated PDF
+        if os.path.exists(pdf_path):
+            st.write("PDF found, reading file...")
+            with open(pdf_path, "rb") as f:
+                pdf_data = f.read()
+            st.write("PDF read successfully.")
+            # Clean up temporary directory
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            return pdf_data
+        else:
+            st.error("PDF file was not generated.")
+            st.write(f"Temporary directory preserved for debugging: {temp_dir}")
+            return None
+
+    except Exception as e:
+        st.error(f"Error generating PDF report: {e}")
+        st.write(f"Temporary directory preserved for debugging: {temp_dir}")
+        return None
 
 # --- Enhanced Login UI ---
 def login_ui():
@@ -775,7 +981,6 @@ def login_ui():
                 st.rerun()
             else:
                 st.error("❌ Invalid PIN! Please try again.")
-
 
 # --- Main App UI with Enhanced Animations ---
 def app_ui():
@@ -817,13 +1022,15 @@ def app_ui():
         search_job = st.selectbox("💼 Filter by Job", ["All"] + JOBS, key="search_job")
 
         st.markdown("📅 **Date Range**")
+        use_date_filter = st.checkbox("Apply Date Range Filter", value=False)
         col1, col2 = st.columns(2)
         with col1:
-            start_date = st.date_input("From", value=datetime.today().replace(day=1), key="start_date")
+            default_start_date = datetime(2025, 1, 1) if df.empty else df['date'].min().date()
+            start_date = st.date_input("From", value=default_start_date, key="start_date")
         with col2:
             end_date = st.date_input("To", value=datetime.today(), key="end_date")
 
-        date_range = (start_date, end_date) if start_date and end_date else None
+        date_range = (start_date, end_date) if use_date_filter else None
 
         filtered_df = filter_data(
             df,
@@ -907,22 +1114,36 @@ def app_ui():
                                                  unsafe_allow_html=True)
                     time.sleep(0.5)
                     id_ = get_or_create_id(df, name)
-                    add_transaction(pd.to_datetime(date), id_, name, job, reason, amount, type_)
+                    success = add_transaction(pd.Timestamp(date, tz='Asia/Karachi'), id_, name, job, reason, amount,
+                                              type_)
                     loading_placeholder.empty()
-                    st.markdown(f"""
-                    <div class="success-message">
-                        <div style="display: flex; align-items: center;">
-                            <div style="font-size: 2rem; margin-right: 1rem;">✅</div>
-                            <div>
-                                <h4 style="margin: 0; color: #155724;">Transaction Successful!</h4>
-                                <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Added for <strong>{name}</strong> ({type_}: Rs. {int(amount)})</p>
+                    if success:
+                        st.markdown(f"""
+                        <div class="success-message">
+                            <div style="display: flex; align-items: center;">
+                                <div style="font-size: 2rem; margin-right: 1rem;">✅</div>
+                                <div>
+                                    <h4 style="margin: 0; color: #155724;">Transaction Successful!</h4>
+                                    <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Added for <strong>{name}</strong> ({type_}: Rs. {int(amount)})</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    st.balloons()
-                    time.sleep(1)
-                    st.rerun()
+                        """, unsafe_allow_html=True)
+                        st.balloons()
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.markdown("""
+                        <div class="error-message">
+                            <div style="display: flex; align-items: center;">
+                                <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
+                                <div>
+                                    <h4 style="margin: 0;">Error</h4>
+                                    <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Failed to add transaction. Please try again.</p>
+                                </div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
                 else:
                     st.markdown("""
                     <div class="error-message">
@@ -982,23 +1203,36 @@ def app_ui():
                                 '<div class="loading-animation" style="margin: 1rem auto;"></div>',
                                 unsafe_allow_html=True)
                             time.sleep(0.5)
-                            edit_transaction(transaction_index, pd.to_datetime(edit_date), edit_name, edit_job,
-                                             edit_reason, edit_amount, edit_type)
+                            success = edit_transaction(transaction_index, pd.Timestamp(edit_date, tz='Asia/Karachi'),
+                                                       edit_name, edit_job, edit_reason, edit_amount, edit_type)
                             loading_placeholder.empty()
-                            st.markdown(f"""
-                            <div class="success-message">
-                                <div style="display: flex; align-items: center;">
-                                    <div style="font-size: 2rem; margin-right: 1rem;">✅</div>
-                                    <div>
-                                        <h4 style="margin: 0; color: #155724;">Transaction Updated!</h4>
-                                        <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Updated for <strong>{edit_name}</strong> ({edit_type}: Rs. {int(edit_amount)})</p>
+                            if success:
+                                st.markdown(f"""
+                                <div class="success-message">
+                                    <div style="display: flex; align-items: center;">
+                                        <div style="font-size: 2rem; margin-right: 1rem;">✅</div>
+                                        <div>
+                                            <h4 style="margin: 0; color: #155724;">Transaction Updated!</h4>
+                                            <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Updated for <strong>{edit_name}</strong> ({edit_type}: Rs. {int(edit_amount)})</p>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                            st.balloons()
-                            time.sleep(1)
-                            st.rerun()
+                                """, unsafe_allow_html=True)
+                                st.balloons()
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.markdown("""
+                                <div class="error-message">
+                                    <div style="display: flex; align-items: center;">
+                                        <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
+                                        <div>
+                                            <h4 style="margin: 0;">Error</h4>
+                                            <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Failed to update transaction. Please try again.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
                         else:
                             st.markdown("""
                             <div class="error-message">
@@ -1185,7 +1419,6 @@ def app_ui():
         # Third row: Stacked Bar Chart for Job-wise Transactions by Month
         if len(filtered_df) > 1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            # Create a 'month' column for grouping
             job_summary = filtered_df.copy()
             job_summary['month'] = job_summary['date'].dt.to_period('M').astype(str)
             job_summary = job_summary.pivot_table(
@@ -1234,19 +1467,75 @@ def app_ui():
 
     # --- Enhanced Export Section ---
     st.markdown('<h2 class="sub-header">💾 Data Export & Management</h2>', unsafe_allow_html=True)
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         if st.button("📥 Download Filtered Data", use_container_width=True, key="download_filtered"):
-            csv = filtered_df.to_csv(index=False)
-            st.download_button(
-                label="⬇️ Download Filtered CSV",
-                data=csv,
-                file_name=f"filtered_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                use_container_width=True,
-                key="download_filtered_btn"
-            )
+            if not filtered_df.empty:
+                csv = filtered_df.copy()
+                csv['date'] = csv['date'].dt.strftime('%Y-%m-%d')
+                csv = csv.to_csv(index=False)
+                st.download_button(
+                    label="⬇️ Download Filtered CSV",
+                    data=csv,
+                    file_name=f"filtered_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                    key="download_filtered_btn"
+                )
+            else:
+                st.markdown("""
+                <div class="error-message">
+                    <div style="display: flex; align-items: center;">
+                        <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
+                        <div>
+                            <h4 style="margin: 0;">No Data</h4>
+                            <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">No filtered data available to download.</p>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
     with col2:
+        if st.button("📜 Download PDF Report", use_container_width=True, key="download_pdf"):
+            if not filtered_df.empty:
+                loading_placeholder = st.empty()
+                loading_placeholder.markdown('<div class="loading-animation" style="margin: 1rem auto;"></div>',
+                                             unsafe_allow_html=True)
+                pdf_data = generate_pdf_report(filtered_df, start_date, end_date)
+                loading_placeholder.empty()
+                if pdf_data:
+                    st.download_button(
+                        label="⬇️ Download PDF Report",
+                        data=pdf_data,
+                        file_name=f"transaction_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True,
+                        key="download_pdf_btn"
+                    )
+                else:
+                    st.markdown("""
+                    <div class="error-message">
+                        <div style="display: flex; align-items: center;">
+                            <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
+                            <div>
+                                <h4 style="margin: 0;">Error</h4>
+                                <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Failed to generate PDF report.</p>
+                            </div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div class="error-message">
+                    <div style="display: flex; align-items: center;">
+                        <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
+                        <div>
+                            <h4 style="margin: 0;">No Data</h4>
+                            <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">No filtered data available for PDF report.</p>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    with col3:
         if st.button("📊 Download Full Database", use_container_width=True, key="download_full"):
             csv = df.to_csv(index=False)
             st.download_button(
@@ -1257,25 +1546,18 @@ def app_ui():
                 use_container_width=True,
                 key="download_full_btn"
             )
-    with col3:
+    with col4:
         if st.button("🔄 Refresh Data", use_container_width=True, key="refresh"):
             st.cache_data.clear()
             st.success("Data refreshed successfully!")
             time.sleep(1)
             st.rerun()
-    with col4:
+    with col5:
         if st.button("🚪 Logout", use_container_width=True, key="logout"):
             st.session_state["authenticated"] = False
             st.success("Logged out successfully!")
             time.sleep(1)
             st.rerun()
-
-    # --- Debug Cache Clear ---
-    if st.button("🛠️ Clear Cache (Debug)", use_container_width=True):
-        st.cache_data.clear()
-        st.success("Cache cleared successfully!")
-        time.sleep(1)
-        st.rerun()
 
     # --- Enhanced Footer ---
     st.markdown("---")
@@ -1285,11 +1567,10 @@ def app_ui():
         <h3 style="color: #2c3e50; margin: 0.5rem 0; font-weight: 700;">Nusrat Furniture Transaction Manager</h3>
         <p style="color: #6c757d; margin: 0; font-weight: 500;">Enterprise-grade transaction management system</p>
         <div style="margin-top: 1rem; font-size: 0.9rem; color: #6c757d;">
-            Made with ❤️ using Streamlit | Version 3.1 | Ultra Modern UI
+            Made with ❤️ using Streamlit | Version 3.4 | Ultra Modern UI
         </div>
     </div>
     """, unsafe_allow_html=True)
-
 
 # --- App Entry Point ---
 def main():
@@ -1299,7 +1580,6 @@ def main():
         login_ui()
     else:
         app_ui()
-
 
 if __name__ == "__main__":
     main()
