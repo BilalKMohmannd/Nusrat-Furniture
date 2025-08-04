@@ -657,7 +657,7 @@ st.markdown("""
 
 # --- Constants ---
 PIN_CODE = "Nusrat1221"
-JOBS = ["Polish Wala", "Driver", "Employee", "Other","Wood Factory","Wood Material","Hardware Material","Sheesha","Ghar Kharacha","Polish Material","Kushion wala","Sofa Factory","Kapra"]
+JOBS = ["Polish Wala", "Driver", "Employee", "Other", "Wood Factory", "Wood Material", "Hardware Material", "Sheesha", "Ghar Kharacha", "Polish Material", "Kushion wala", "Sofa Factory", "Kapra"]
 TABLE_NAME = "transactions"
 
 # --- Supabase Setup ---
@@ -687,6 +687,7 @@ def show_loading():
     return st.markdown(loading_html, unsafe_allow_html=True)
 
 # --- Load Data with Robust Date Handling ---
+@st.cache_data
 def load_data():
     try:
         supabase = init_supabase()
@@ -715,6 +716,24 @@ def load_data():
         st.error(f"Error loading data: {e}")
         return pd.DataFrame(columns=["date", "id", "name", "job", "reason", "amount", "type"])
 
+# --- Normalize Job Values in Supabase ---
+def normalize_jobs():
+    try:
+        supabase = init_supabase()
+        if not supabase:
+            return
+        response = supabase.table(TABLE_NAME).select("*").execute()
+        df = pd.DataFrame(response.data)
+        for _, row in df.iterrows():
+            if row['job'] not in JOBS:
+                # Map to closest valid job or "Other"
+                new_job = next((j for j in JOBS if j.lower() == row['job'].lower()), "Other")
+                supabase.table(TABLE_NAME).update({"job": new_job}).eq("id", row["id"]).execute()
+        st.cache_data.clear()
+        st.success("Job values normalized in Supabase.")
+    except Exception as e:
+        st.error(f"Error normalizing jobs: {e}")
+
 # --- Save Data to Supabase ---
 def save_data_to_supabase(data, operation="insert", index=None):
     try:
@@ -740,8 +759,11 @@ def get_or_create_id(df, name):
         return person.iloc[0]['id']
     return str(uuid.uuid4())[:8]
 
-# --- Add Transaction with Animation ---
+# --- Add Transaction with Validation ---
 def add_transaction(date, id_, name, job, reason, amount, type_):
+    if job not in JOBS:
+        st.error(f"Invalid job: {job}. Please select a valid job from {JOBS}.")
+        return False
     data = {
         "date": date,
         "id": id_,
@@ -753,8 +775,11 @@ def add_transaction(date, id_, name, job, reason, amount, type_):
     }
     return save_data_to_supabase(data, operation="insert")
 
-# --- Edit Transaction ---
+# --- Edit Transaction with Validation ---
 def edit_transaction(index, date, name, job, reason, amount, type_):
+    if job not in JOBS:
+        st.error(f"Invalid job: {job}. Please select a valid job from {JOBS}.")
+        return False
     df = load_data()
     id_ = df.loc[index, 'id']  # Retain original ID
     data = {
@@ -787,7 +812,7 @@ def filter_data(df, name=None, id_=None, job=None, date_range=None):
         filtered_df = filtered_df[
             (filtered_df['date'] >= start_date) &
             (filtered_df['date'] <= end_date)
-            ]
+        ]
 
     return filtered_df
 
@@ -982,6 +1007,120 @@ def login_ui():
             else:
                 st.error("❌ Invalid PIN! Please try again.")
 
+# --- Cache Plotly Figures for Performance ---
+@st.cache_data
+def create_pie_chart(type_summary):
+    fig = px.pie(
+        type_summary,
+        values='amount',
+        names='type',
+        title="💰 Transaction Distribution",
+        color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
+        hole=0.4
+    )
+    fig.update_layout(
+        font=dict(family="Poppins, sans-serif", size=12),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        title_font_size=16,
+        title_font_color='#2c3e50',
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+    )
+    fig.update_traces(
+        textposition='inside',
+        textinfo='percent+label',
+        hovertemplate='<b>%{label}</b><br>Amount: Rs. %{value:,.2f}<br>Percentage: %{percent}<extra></extra>'
+    )
+    return fig
+
+@st.cache_data
+def create_bar_chart(pivot_df):
+    fig = px.bar(
+        pivot_df,
+        x='name',
+        y=['In', 'Out'],
+        title="👥 Person-wise Transaction Summary",
+        barmode='group',
+        color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'}
+    )
+    fig.update_layout(
+        font=dict(family="Poppins, sans-serif", size=12),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis_title="Person",
+        yaxis_title="Amount (Rs.)",
+        xaxis=dict(tickangle=45),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+    )
+    fig.update_traces(
+        hovertemplate='<b>%{x}</b><br>%{fullData.name}: Rs. %{y:,.2f}<extra></extra>'
+    )
+    return fig
+
+@st.cache_data
+def create_line_chart(daily_summary):
+    fig = px.line(
+        daily_summary,
+        x='date',
+        y='amount',
+        color='type',
+        title="📈 Transaction Trends Over Time",
+        color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
+        markers=True
+    )
+    fig.update_layout(
+        font=dict(family="Poppins, sans-serif", size=12),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis_title="Date",
+        yaxis_title="Amount (Rs.)",
+        title_font_size=16,
+        title_font_color='#2c3e50',
+        hovermode='x unified'
+    )
+    fig.update_traces(
+        line=dict(width=3),
+        marker=dict(size=8),
+        hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Amount: Rs. %{y:,.2f}<extra></extra>'
+    )
+    return fig
+
+@st.cache_data
+def create_job_bar_chart(job_summary):
+    fig = px.bar(
+        job_summary,
+        x='month',
+        y=['In', 'Out'],
+        color='job',
+        title="💼 Job-wise Transactions by Month",
+        barmode='stack',
+        color_discrete_map={
+            'Polish Wala': '#667eea',
+            'Driver': '#764ba2',
+            'Employee': '#6b46c1',
+            'Other': '#8b5cf6'
+        }
+    )
+    fig.update_layout(
+        font=dict(family="Poppins, sans-serif", size=12),
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis_title="Month",
+        yaxis_title="Amount (Rs.)",
+        xaxis=dict(tickangle=45),
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
+        title_font_size=16,
+        title_font_color='#2c3e50',
+        bargap=0.2
+    )
+    fig.update_traces(
+        hovertemplate='<b>%{fullData.name}</b><br>Month: %{x}<br>Amount: Rs. %{y:,.2f}<extra></extra>'
+    )
+    return fig
+
 # --- Main App UI with Enhanced Animations ---
 def app_ui():
     if "expand_transaction" not in st.session_state:
@@ -998,6 +1137,10 @@ def app_ui():
     """, unsafe_allow_html=True)
 
     df = load_data()
+
+    # Debug: Display unique jobs for troubleshooting
+    if not df.empty:
+        st.write("Unique jobs in DataFrame:", df['job'].unique().tolist())
 
     # --- Floating Plus Button ---
     st.markdown("""
@@ -1108,7 +1251,7 @@ def app_ui():
         col1, col2, col3 = st.columns([2, 1, 2])
         with col2:
             if st.button("💾 Submit Transaction", use_container_width=True, key="submit_btn"):
-                if name and reason and amount > 0:
+                if name and reason and amount > 0 and job in JOBS:
                     loading_placeholder = st.empty()
                     loading_placeholder.markdown('<div class="loading-animation" style="margin: 1rem auto;"></div>',
                                                  unsafe_allow_html=True)
@@ -1151,7 +1294,7 @@ def app_ui():
                             <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
                             <div>
                                 <h4 style="margin: 0;">Validation Error</h4>
-                                <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Please fill all required fields marked with *</p>
+                                <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Please fill all required fields marked with * and ensure a valid job is selected.</p>
                             </div>
                         </div>
                     </div>
@@ -1171,33 +1314,27 @@ def app_ui():
             transaction_index = st.selectbox(
                 "Select Transaction to Edit",
                 options=range(len(df)),
-                format_func=lambda
-                    x: f"{df.iloc[x]['name']} - {df.iloc[x]['reason']} ({df.iloc[x]['date'].strftime('%Y-%m-%d')})"
+                format_func=lambda x: f"{df.iloc[x]['name']} - {df.iloc[x]['reason']} ({df.iloc[x]['date'].strftime('%Y-%m-%d')})"
             )
             if transaction_index is not None:
                 selected_transaction = df.iloc[transaction_index]
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    edit_name = st.text_input("👤 Person's Name*", value=selected_transaction['name'],
-                                              key="edit_form_name")
-                    edit_job = st.selectbox("💼 Job Role*", JOBS, index=JOBS.index(selected_transaction['job']),
-                                            key="edit_form_job")
+                    edit_name = st.text_input("👤 Person's Name*", value=selected_transaction['name'], key="edit_form_name")
+                    job_index = JOBS.index(selected_transaction['job']) if selected_transaction['job'] in JOBS else 0
+                    edit_job = st.selectbox("💼 Job Role*", JOBS, index=job_index, key="edit_form_job")
                 with col2:
-                    edit_reason = st.text_input("📄 Reason*", value=selected_transaction['reason'],
-                                                key="edit_form_reason")
-                    edit_amount = st.number_input("💰 Amount*", min_value=0.0, step=100.0,
-                                                  value=float(selected_transaction['amount']), key="edit_form_amount")
+                    edit_reason = st.text_input("📄 Reason*", value=selected_transaction['reason'], key="edit_form_reason")
+                    edit_amount = st.number_input("💰 Amount*", min_value=0.0, step=100.0, value=float(selected_transaction['amount']), key="edit_form_amount")
                 with col3:
-                    edit_type = st.selectbox("🔄 Transaction Type*", ["In", "Out"],
-                                             index=["In", "Out"].index(selected_transaction['type']),
-                                             key="edit_form_type")
+                    edit_type = st.selectbox("🔄 Transaction Type*", ["In", "Out"], index=["In", "Out"].index(selected_transaction['type']), key="edit_form_type")
                     edit_date = st.date_input("📅 Date", value=selected_transaction['date'].date(), key="edit_form_date")
 
                 st.markdown("---")
                 col1, col2, col3 = st.columns([2, 1, 2])
                 with col2:
                     if st.button("💾 Update Transaction", use_container_width=True, key="edit_submit_btn"):
-                        if edit_name and edit_reason and edit_amount > 0:
+                        if edit_name and edit_reason and edit_amount > 0 and edit_job in JOBS:
                             loading_placeholder = st.empty()
                             loading_placeholder.markdown(
                                 '<div class="loading-animation" style="margin: 1rem auto;"></div>',
@@ -1240,7 +1377,7 @@ def app_ui():
                                     <div style="font-size: 2rem; margin-right: 1rem;">⚠️</div>
                                     <div>
                                         <h4 style="margin: 0;">Validation Error</h4>
-                                        <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Please fill all required fields marked with *</p>
+                                        <p style="margin: 0.5rem 0 0 0; opacity: 0.8;">Please fill all required fields marked with * and ensure a valid job is selected.</p>
                                     </div>
                                 </div>
                             </div>
@@ -1323,28 +1460,7 @@ def app_ui():
         with col1:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             type_summary = filtered_df.groupby('type')['amount'].sum().reset_index()
-            fig_pie = px.pie(
-                type_summary,
-                values='amount',
-                names='type',
-                title="💰 Transaction Distribution",
-                color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
-                hole=0.4
-            )
-            fig_pie.update_layout(
-                font=dict(family="Poppins, sans-serif", size=12),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                title_font_size=16,
-                title_font_color='#2c3e50',
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
-            )
-            fig_pie.update_traces(
-                textposition='inside',
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>Amount: Rs. %{value:,.2f}<br>Percentage: %{percent}<extra></extra>'
-            )
+            fig_pie = create_pie_chart(type_summary)
             st.plotly_chart(fig_pie, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1361,27 +1477,7 @@ def app_ui():
                 pivot_df['In'] = 0
             if 'Out' not in pivot_df.columns:
                 pivot_df['Out'] = 0
-            fig_bar = px.bar(
-                pivot_df,
-                x='name',
-                y=['In', 'Out'],
-                title="👥 Person-wise Transaction Summary",
-                barmode='group',
-                color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'}
-            )
-            fig_bar.update_layout(
-                font=dict(family="Poppins, sans-serif", size=12),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Person",
-                yaxis_title="Amount (Rs.)",
-                xaxis=dict(tickangle=45),
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
-            )
-            fig_bar.update_traces(
-                hovertemplate='<b>%{x}</b><br>%{fullData.name}: Rs. %{y:,.2f}<extra></extra>'
-            )
+            fig_bar = create_bar_chart(pivot_df)
             st.plotly_chart(fig_bar, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1389,30 +1485,7 @@ def app_ui():
         if len(filtered_df) > 5:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             daily_summary = filtered_df.groupby([filtered_df['date'].dt.date, 'type'])['amount'].sum().reset_index()
-            fig_time = px.line(
-                daily_summary,
-                x='date',
-                y='amount',
-                color='type',
-                title="📈 Transaction Trends Over Time",
-                color_discrete_map={'In': '#27ae60', 'Out': '#e74c3c'},
-                markers=True
-            )
-            fig_time.update_layout(
-                font=dict(family="Poppins, sans-serif", size=12),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Date",
-                yaxis_title="Amount (Rs.)",
-                title_font_size=16,
-                title_font_color='#2c3e50',
-                hovermode='x unified'
-            )
-            fig_time.update_traces(
-                line=dict(width=3),
-                marker=dict(size=8),
-                hovertemplate='<b>%{fullData.name}</b><br>Date: %{x}<br>Amount: Rs. %{y:,.2f}<extra></extra>'
-            )
+            fig_time = create_line_chart(daily_summary)
             st.plotly_chart(fig_time, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1432,36 +1505,7 @@ def app_ui():
                 job_summary['In'] = 0
             if 'Out' not in job_summary.columns:
                 job_summary['Out'] = 0
-            fig_job = px.bar(
-                job_summary,
-                x='month',
-                y=['In', 'Out'],
-                color='job',
-                title="💼 Job-wise Transactions by Month",
-                barmode='stack',
-                color_discrete_map={
-                    'Polish Wala': '#667eea',
-                    'Driver': '#764ba2',
-                    'Employee': '#6b46c1',
-                    'Other': '#8b5cf6'
-                }
-            )
-            fig_job.update_layout(
-                font=dict(family="Poppins, sans-serif", size=12),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Month",
-                yaxis_title="Amount (Rs.)",
-                xaxis=dict(tickangle=45),
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5),
-                title_font_size=16,
-                title_font_color='#2c3e50',
-                bargap=0.2
-            )
-            fig_job.update_traces(
-                hovertemplate='<b>%{fullData.name}</b><br>Month: %{x}<br>Amount: Rs. %{y:,.2f}<extra></extra>'
-            )
+            fig_job = create_job_bar_chart(job_summary)
             st.plotly_chart(fig_job, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1579,6 +1623,7 @@ def main():
     if not st.session_state["authenticated"]:
         login_ui()
     else:
+        normalize_jobs()  # Run once to clean up job values
         app_ui()
 
 if __name__ == "__main__":
