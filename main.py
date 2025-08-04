@@ -1139,9 +1139,7 @@ def app_ui():
     df = load_data()
 
     # Debug: Display unique jobs for troubleshooting
-    if not df.empty:
-        st.write("Unique jobs in DataFrame:", df['job'].unique().tolist())
-
+    
     # --- Floating Plus Button ---
     st.markdown("""
     <div class="floating-plus">
